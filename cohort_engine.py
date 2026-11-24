@@ -1,7 +1,12 @@
 import pandas as pd
 from pathlib import Path
 from io import BytesIO
+import streamlit as st
 from openpyxl.styles import Font
+
+AGENTES = dict(
+    st.secrets["agents"]
+)
 
 CASE_ID_COL = "Case ID"
 EAID_COL = "Enterprise Id"
@@ -171,20 +176,21 @@ def seleccionar_grupos_dia(
 
 def distribuir_grupos(
         grupos,
-        cantidad_personas):
+        agentes_seleccionados):
 
     personas = {}
 
-    for i in range(cantidad_personas):
+    for agente in agentes_seleccionados:
 
-        personas[f"Person_{i+1}"] = {
+        personas[agente] = {
             "cases": 0,
-            "groups": []
+            "groups": [],
+            "user_id": AGENTES[agente]
         }
 
     grupos = sorted(
         grupos,
-        key=lambda x: x["size"],
+        key=lambda g: g["size"],
         reverse=True
     )
 
@@ -192,8 +198,8 @@ def distribuir_grupos(
 
         destino = min(
             personas,
-            key=lambda p:
-            personas[p]["cases"]
+            key=lambda x:
+            personas[x]["cases"]
         )
 
         personas[destino]["groups"].append(
@@ -219,9 +225,14 @@ def crear_detalle(personas):
 
             temp["Assigned To"] = owner
 
+            temp["User ID"] = (
+                data["user_id"]
+            )
+
             frames.append(temp)
 
     if len(frames) == 0:
+
         return pd.DataFrame()
 
     resultado = pd.concat(
@@ -245,6 +256,7 @@ def crear_summary(personas):
         filas.append(
             {
                 "Owner": owner,
+                "User ID": data["user_id"],
                 "Cases": data["cases"],
                 "EAIDs": len(
                     data["groups"]
@@ -377,8 +389,18 @@ def exportar_memoria(
         )
 
         detalle[
-            [CASE_ID_COL]
-        ].to_excel(
+            [
+                CASE_ID_COL,
+                "User ID",
+                "Assigned To"
+            ]
+        ].sort_values(
+            by=[
+                "Assigned To",
+                CASE_ID_COL
+            ]
+            
+        ).to_excel(
             writer,
             sheet_name="CaseIDs",
             index=False
@@ -393,13 +415,13 @@ def exportar_memoria(
 
 def generar_asignacion(
         archivo,
-        personas,
+        agentes_seleccionados,
         objetivo):
 
-    if personas <= 0:
+    if len(agentes_seleccionados) == 0:
         raise ValueError(
-            "La cantidad de personas debe ser mayor que cero."
-        )
+        "Debe seleccionar al menos un analista."
+    )
 
     if objetivo <= 0:
         raise ValueError(
@@ -440,17 +462,24 @@ def generar_asignacion(
 
     grupos = construir_grupos(df)
 
+    capacidad_objetivo = (
+        len(
+            agentes_seleccionados
+        )
+        * objetivo
+    )
+
     grupos_dia, asignados = (
         seleccionar_grupos_dia(
             grupos,
-            personas * objetivo
+            capacidad_objetivo
         )
     )
 
     personas_data = (
         distribuir_grupos(
             grupos_dia,
-            personas
+            agentes_seleccionados
         )
     )
 
@@ -465,7 +494,9 @@ def generar_asignacion(
     dashboard = crear_dashboard(
         detalle,
         summary,
-        personas,
+        len(
+            agentes_seleccionados
+            ),
         objetivo,
         asignados,
         total_archivo
