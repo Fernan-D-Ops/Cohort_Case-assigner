@@ -138,6 +138,8 @@ if st.button("Generar Asignación"):
 
         except Exception as ex:
 
-            st.error(
-                str(ex)
+            import traceback
+
+            st.code(
+                traceback.format_exc()
             )
